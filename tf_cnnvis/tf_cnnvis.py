@@ -23,6 +23,8 @@ is_Registered = False # prevent duplicate gradient registration
 dict_layer = {'r' : "relu", 'p' : 'Maxpool', 'c' : 'Conv2d'}
 units = None
 
+configProto = tf.ConfigProto(allow_soft_placement = True)
+
 # register custom gradients
 def _register_custom_gradients():
     """
@@ -60,12 +62,21 @@ def _save_model(graph):
     PATH = os.path.join("model", "tmp-model")
     make_dir(path = os.path.dirname(PATH))
 
+<<<<<<< HEAD
     with graph.as_default():
         with tf.Session() as sess:
             fake_var = tf.Variable([0.0], name = "fake_var")
             sess.run(tf.global_variables_initializer())
             saver = tf.train.Saver()
             saver.save(sess, PATH)
+=======
+	with graph.as_default():
+		with tf.Session(config=configProto) as sess:
+			fake_var = tf.Variable([0.0], name = "fake_var")
+			sess.run(tf.global_variables_initializer())
+			saver = tf.train.Saver()
+			saver.save(sess, PATH)
+>>>>>>> c9ac1555e587dc9339fb44de51c2c93b1e94ce28
 
     return PATH + ".meta"
 
@@ -309,6 +320,7 @@ def _deconvolution(graph, sess, op_tensor, X, feed_dict):
                     out.extend(sess.run(reconstruct[:c], feed_dict = feed_dict))
     return out
 def _deepdream(graph, sess, op_tensor, X, feed_dict, layer, path_outdir, path_logdir):
+<<<<<<< HEAD
     tensor_shape = op_tensor.get_shape().as_list()
 
     with graph.as_default() as g:
@@ -368,6 +380,69 @@ def _deepdream(graph, sess, op_tensor, X, feed_dict, layer, path_outdir, path_lo
                 is_success = write_results(img, (layer, units, k), path_outdir, path_logdir, method = "deepdream")
                 print("%s -> featuremap completed." % (", ".join(str(num) for num in units[k:k+c])))
     return is_success
+=======
+	tensor_shape = op_tensor.get_shape().as_list()
+
+	with graph.as_default() as g:
+		n = (config["N"] + 1) // 2
+		feature_map = tf.placeholder(dtype = tf.int32)
+		tmp1 = tf.reduce_mean(tf.multiply(tf.gather(tf.transpose(op_tensor),feature_map),tf.diag(tf.ones_like(feature_map, dtype = tf.float32))), axis = 0)
+		tmp2 = 1e-3 * tf.reduce_mean(tf.square(X), axis = (1, 2 ,3))
+		tmp = tmp1 - tmp2
+		t_grad = tf.gradients(ys = tmp, xs = X)[0]
+
+		with sess.as_default() as sess:
+			input_shape = sess.run(tf.shape(X), feed_dict = feed_dict)
+			tile_size = input_shape[1 : 3]
+			channels = input_shape[3]
+
+			lap_in = tf.placeholder(np.float32, name='lap_in')
+			laplacian_pyramid = lap_normalize(lap_in, channels, scale_n=config["NUM_LAPLACIAN_LEVEL"])
+
+			image_to_resize = tf.placeholder(np.float32, name='image_to_resize')
+			size_to_resize = tf.placeholder(np.int32, name='size_to_resize')
+			resize_image = tf.image.resize_bilinear(image_to_resize, size_to_resize)
+
+			end = len(units)
+			for k in range(0, end, n):
+				c = n
+				if k + n > end:
+					c = end - ((end // n) * n)
+				img = np.random.uniform(size = (c, tile_size[0], tile_size[1], channels)) + 117.0
+				feed_dict[feature_map] = units[k : k + c]
+
+				for octave in range(config["NUM_OCTAVE"]):
+					if octave > 0:
+						hw = np.float32(img.shape[1:3])*config["OCTAVE_SCALE"]
+						img = sess.run(resize_image, {image_to_resize : img, size_to_resize : np.int32(hw)})
+
+						for i, im in enumerate(img):
+							min_img = im.min()
+							max_img = im.max()
+							temp = denoise_tv_bregman((im - min_img) / (max_img - min_img), weight = config["TV_DENOISE_WEIGHT"])
+							img[i] = (temp * (max_img - min_img) + min_img).reshape(img[i].shape)
+
+					for j in range(config["NUM_ITERATION"]):
+						sz = tile_size
+						h, w = img.shape[1:3]
+						sx = np.random.randint(sz[1], size=1)
+						sy = np.random.randint(sz[0], size=1)
+						img_shift = np.roll(np.roll(img, sx, 2), sy, 1)
+						grad = np.zeros_like(img)
+						for y in range(0, max(h-sz[0]//2,sz[0]), sz[0] // 2):
+							for x in range(0, max(h-sz[1]//2,sz[1]), sz[1] // 2):
+									feed_dict[X] = img_shift[:, y:y+sz[0],x:x+sz[1]]
+									try:
+										grad[:, y:y+sz[0],x:x+sz[1]] = sess.run(t_grad, feed_dict=feed_dict)
+									except:
+										pass
+
+						lap_out = sess.run(laplacian_pyramid, feed_dict={lap_in:np.roll(np.roll(grad, -sx, 2), -sy, 1)})
+						img = img + lap_out
+				is_success = write_results(img, (layer, units, k), path_outdir, path_logdir, method = "deepdream")
+				print("%s -> featuremap completed." % (", ".join(str(num) for num in units[k:k+c])))
+	return is_success
+>>>>>>> c9ac1555e587dc9339fb44de51c2c93b1e94ce28
 
 
 # main api methods
